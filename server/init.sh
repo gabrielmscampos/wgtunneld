@@ -17,28 +17,28 @@ create_wireguard_config() {
   cat > /etc/wireguard/wg0.conf <<EOF
 [Interface]
 PrivateKey = $server_private
-Address = 10.10.10.254/32
+Address = 10.8.0.1/32
 ListenPort = $wireguard_port
 MTU = $wireguard_mtu
 SaveConfig = false
 
 [Peer]
 PublicKey = $peer_public
-AllowedIPs = 10.10.10.1/32
+AllowedIPs = 10.8.0.2/32
 EOF
 
   # Peer configuration
   cat > /etc/wireguard/peer.conf <<EOF
 [Interface]
 PrivateKey = $peer_private
-Address = 10.10.10.1/32
+Address = 10.8.0.2/32
 MTU = $wireguard_mtu
 SaveConfig = false
 
 [Peer]
 PublicKey = $server_public
 Endpoint = $wireguard_ip:$wireguard_port
-AllowedIPs = 10.10.10.254/32
+AllowedIPs = 10.8.0.1/32
 PersistentKeepalive = 25
 EOF
 }
@@ -59,9 +59,9 @@ create_socat_services() {
     dst_proto=${destinationPort#*/}
 
     if [ "$src_proto" = "tcp" ]; then
-      socat TCP-LISTEN:$src_port,bind=$sourceIp,fork TCP:10.10.10.1:$dst_port &
+      socat TCP-LISTEN:$src_port,bind=$sourceIp,fork TCP:10.8.0.2:$dst_port &
     elif [ "$src_proto" = "udp" ]; then
-      socat UDP-LISTEN:$src_port,bind=$sourceIp,fork UDP:10.10.10.1:$dst_port &
+      socat UDP-LISTEN:$src_port,bind=$sourceIp,fork UDP:10.8.0.2:$dst_port &
     fi
   done
 }
