@@ -43,12 +43,13 @@ PersistentKeepalive = 25
 EOF
 }
 
-create_socat_services() {
-  # Kill any old socat processes
-  pkill socat 2>/dev/null || true
-
+configure_iptables() {
   # Read each forwarding rule from YAML
   mapfile -t forward < <(yq e -o=tsv '.forward[] | [.sourceIp, .sourcePort, .destinationPort]' /etc/forwarding.yaml)
+
+  # Enable forwarding
+  iptables -I FORWARD 1 -i eth0 -o wg0 -j ACCEPT
+  iptables -I FORWARD 2 -i wg0 -o eth0 -j ACCEPT
   
   for f in "${forward[@]}"; do
     IFS=$'\t' read -r sourceIp sourcePort destinationPort <<< "$f"
@@ -58,11 +59,14 @@ create_socat_services() {
     dst_port=${destinationPort%/*}
     dst_proto=${destinationPort#*/}
 
-    if [ "$src_proto" = "tcp" ]; then
-      socat TCP-LISTEN:$src_port,bind=$sourceIp,fork TCP:10.8.0.2:$dst_port &
-    elif [ "$src_proto" = "udp" ]; then
-      socat UDP-LISTEN:$src_port,bind=$sourceIp,fork UDP:10.8.0.2:$dst_port &
+    if [ "$src_proto" = "tcp" ] || [ "$src_proto" = "udp" ]; then
+      iptables -t nat -A PREROUTING -i eth0 -p $src_proto --dport $src_port -j DNAT --to-destination 10.8.0.2:$dst_port
+      iptables -t nat -A POSTROUTING -o wg0 -p $src_proto -d 10.8.0.2 --dport $dst_port -j SNAT --to-source 10.8.0.1
+    else
+      echo "Error: unsupported protocol '$src_proto'. Only 'tcp' or 'udp' are allowed." >&2
+      exit 1
     fi
+
   done
 }
 
@@ -78,13 +82,13 @@ main() {
     echo "$(date): Creating wireguard config, check the config dir for the client config"
     create_wireguard_config
   fi
-
-  echo "$(date): Starting socat forwarding services"
-  create_socat_services
-  
+ 
   echo "$(date): Starting Wireguard"
   wg-quick up wg0
   
+  echo "$(date): Configuring iptables"
+  configure_iptables
+
   trap stop_tunnel TERM INT QUIT
   
   wg
